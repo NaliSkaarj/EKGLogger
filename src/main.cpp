@@ -3,109 +3,77 @@ extern "C" {
   #include "user_interface.h"
 }
 
-#define LO_M D0         // Right arm
-#define LO_P D1         // Left arm
+#define LO_M D0         // Right arm electrode
+#define LO_P D1         // Left arm electrode
 
-#define FS 200                         // częstotliwość próbkowania [Hz]
-#define WINDOW_SIZE 30                 // okno integracji (~150 ms)
-#define REFRACTORY_PERIOD (FS * 0.25)  // 250 ms - przerwa po wykryciu
-#define ALPHA 0.1f                     // współczynnik filtru IIR (0–1)
-
-// ================================
-// Bufory i zmienne globalne
-// ================================
-static float diff_buf[5] = {0};
-static float int_buf[WINDOW_SIZE] = {0};
-static int int_index = 0;
-static int refractory_counter = 0;
-
-static float threshold = 0.0f;
-static float signal_level = 0.0f;
-static float noise_level = 0.0f;
+#define FS 200
+#define RISE_THRESHOLD            300     // próg wzrostu (w jednostkach '3 sample sum')
+#define FALL_THRESHOLD            -500    // próg spadku
+#define REFRACTORY_PERIOD         (FS/5)  // 200ms okres refrakcji
+#define RISE_FALL_MAX_PERIOD      8       // maksymalny okres (w próbkach) pomiędzy wzrostem i opadnięciem
 
 static unsigned long current_time = 0;
-static unsigned long last_peak_time = 0;
 static float last_bpm = 0.0f;
-
-static float filtered_value = 0.0f;  // wyjście z filtru IIR
-static float baseline = 512.0f;      // wartość spoczynkowa ADC (po kalibracji)
-
-/**
- * Filtr dolnoprzepustowy IIR
-**/
-static inline float lowpass_filter( float input ) {
-  filtered_value += ALPHA * ( input - filtered_value );
-  return filtered_value;
-}
+static uint8_t rise_to_fall_period = 0;
+static uint8_t refractory_counter = 0;
 
 /**
-* Normalizacja (odejmuje tło sygnału)
-**/
-static inline float normalize( float sample ) {
-  // można dodać wolne uaktualnianie baseline
-  baseline = 0.999f * baseline + 0.001f * sample;
-  return sample - baseline;
-}
-
-/**
-* Główna funkcja przetwarzająca próbkę
-**/
+ * Call this function FS times per second (e.g. in loop with delay(1000/FS))
+ * with adc_value being the latest ADC sample from ECG input.
+ * It returns true if a heartbeat was detected.
+ */
 bool process_ecg_sample( uint16_t adc_value ) {
+  static int16_t deriv_buf[3] = {0};    // wielkość bufora jest uzależniona od FS (powinna wynosić czasowo ~15ms, @FS=200 => 3 próbki, @FS=400 => 6 próbek)
+  static uint16_t prev_adc_value;
+  static bool rise_detected = false;
+  static bool fall_detected = false;
+  bool heartbeat_detected = false;
+  int16_t deriv = adc_value - prev_adc_value;
+
+  prev_adc_value = adc_value;
   current_time++;
 
-  // 1️⃣ Filtr dolnoprzepustowy i normalizacja
-  float sample = lowpass_filter( (float)adc_value );
-  sample = normalize( sample );
+  deriv_buf[2] = deriv_buf[1];
+  deriv_buf[1] = deriv_buf[0];
+  deriv_buf[0] = deriv;
 
-  // 2️⃣ Pochodna (filtr różnicowy 5-punktowy)
-  diff_buf[4] = diff_buf[3];
-  diff_buf[3] = diff_buf[2];
-  diff_buf[2] = diff_buf[1];
-  diff_buf[1] = diff_buf[0];
-  diff_buf[0] = sample;
-
-  float deriv = ( 2 * diff_buf[0] + diff_buf[1] - diff_buf[3] - 2 * diff_buf[4] ) / 8.0f;
-
-  // 3️⃣ Potęgowanie
-  float squared = deriv * deriv;
-
-  // 4️⃣ Całkowanie ruchome (okno przesuwne)
-  int_buf[int_index] = squared;
-  int_index = (int_index + 1) % WINDOW_SIZE;
-
-  float sum = 0.0f;
-  for( int i = 0; i < WINDOW_SIZE; i++ ) {
-    sum += int_buf[i];
-  }
-  float integrated = sum / WINDOW_SIZE;
-
-  // 5️⃣ Adaptacyjny próg i wykrywanie
-  bool detected = false;
   if( refractory_counter > 0 ) {
     refractory_counter--;
+    return false;
   }
 
-  if( integrated > threshold && refractory_counter == 0 ) {
-    detected = true;
-    refractory_counter = REFRACTORY_PERIOD;
-    signal_level = 0.125f * integrated + 0.875f * signal_level;
-  }
-  else {
-    noise_level = 0.125f * integrated + 0.875f * noise_level;
+  int16_t deriv_sum = deriv_buf[0] + deriv_buf[1] + deriv_buf[2];
+
+  if( !rise_detected && !fall_detected && deriv_sum > RISE_THRESHOLD ) {
+    rise_detected = true;
+    rise_to_fall_period = 0;
   }
 
-  threshold = noise_level + 0.25f * (signal_level - noise_level);
+  if( rise_detected && !fall_detected && deriv_sum < FALL_THRESHOLD ) {
+    fall_detected = true;
+  } else if( rise_detected && !fall_detected ) {
+    rise_to_fall_period++;
 
-  // 6️⃣ Oblicz BPM
-  if( detected ) {
-    unsigned long dt = current_time - last_peak_time;
-    if( dt > 0 ) {
-      last_bpm = 60.0f * FS / (float)dt;
+    if( rise_to_fall_period > RISE_FALL_MAX_PERIOD ) {
+      rise_detected = false;
+      rise_to_fall_period = 0;
     }
-    last_peak_time = current_time;
   }
 
-  return detected;
+  if( rise_detected && fall_detected ) {
+    heartbeat_detected = true;
+    rise_detected = false;
+    fall_detected = false;
+    refractory_counter = REFRACTORY_PERIOD;
+
+    // Oblicz BPM
+    if( current_time > 0 ) {
+      last_bpm = 60.0f * FS / (float)current_time;
+    }
+    current_time = 0;
+  }
+
+  return heartbeat_detected;
 }
 
 void setup() {
@@ -115,17 +83,17 @@ void setup() {
 void loop() {
   if( digitalRead(LO_M) == HIGH ) {
     Serial.println( "Right Arm electrode error!" );
-  } else if( digitalRead(LO_P) == HIGH ) {
-    Serial.println( "Left Arm electrode error!" );
+  // } else if( digitalRead(LO_P) == HIGH ) {
+  //   Serial.println( "Left Arm electrode error!" );
   } else {
-    uint16_t adc = analogRead( A0 );
-    // uint16_t adc = system_adc_read();  // niskopoziomowy odczyt ADC
-    // Serial.println( analogRead(adc) );
+    // uint16_t adc = analogRead( A0 );
+    uint16_t adc = system_adc_read();  // niskopoziomowy odczyt ADC (szybszy, może zgrzytać przy używaniu WiFi)
+    // Serial.println( adc );
 
     if( process_ecg_sample(adc) ) {
       Serial.print( "BPM = " );
       Serial.println( last_bpm );
     }
   }
-  delay( 5 ); // 200 Hz
+  delay( 1000/FS ); // 200 Hz
 }
