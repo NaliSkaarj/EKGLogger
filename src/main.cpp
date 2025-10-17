@@ -4,8 +4,9 @@ extern "C" {
 }
 #include "LittleFS.h"
 
-#define LO_M D0         // Right arm electrode
-#define LO_P D1         // Left arm electrode
+#define LO_M                      D0                    // Right arm electrode
+#define LO_P                      D1                    // Left arm electrode
+#define BUTTON_BOOT_PIN           0                     // GPIO_0 is connected to BOOT button on PCB
 
 #define FS                        200                   // Sampling frequency in Hz
 #define RISE_THRESHOLD            300
@@ -16,6 +17,7 @@ extern "C" {
 #define MAX_SAMPLES               4096                  // max samples to store in buffer
 #define MAX_FILL_SAMPLES          20                    // max samples to "fill" when saving to FS takes too long
 #define SAMPLE_INTERVAL_US        (1000000UL / FS)
+#define DEBOUNCE_MS               50                    // button debounce time in milliseconds
 
 static volatile uint16_t last_bpm = 0;
 static uint8_t rise_to_fall_period = 0;
@@ -130,13 +132,17 @@ bool saveToFile( const char * fileName, const uint8_t * data, uint32_t len ) {
 
 void setup() {
   Serial.begin( 115200 );
+  pinMode( BUTTON_BOOT_PIN, INPUT_PULLUP );
 }
 
 void loop() {
   static unsigned long lastSampleTime = 0;
   unsigned long now = micros();
+  static bool lastReading = HIGH;           // last reading from button
+  static unsigned long lastChangeTime = 0;
+  bool reading;
 
-  // sampling interval check
+  // ADC sampling interval check
   if( now - lastSampleTime >= SAMPLE_INTERVAL_US ) {
     lastSampleTime += SAMPLE_INTERVAL_US;  // maintain precise interval
 
@@ -199,6 +205,28 @@ void loop() {
       if( digitalRead(LO_M) == LOW && digitalRead(LO_P) == LOW ) {
         Serial.println( "Electrode error cleared." );
         electrodeError = false;
+      }
+    }
+  }
+
+  // Button debounce handling
+  reading = digitalRead( BUTTON_BOOT_PIN );
+  // check for button state change
+  if( reading != lastReading ) {
+    lastChangeTime = millis();
+    lastReading = reading;
+  }
+  // check if stable for DEBOUNCE_MS
+  if( (millis() - lastChangeTime) > DEBOUNCE_MS ) {
+    static bool lastStableState = HIGH;       // last stable state of button
+
+    if( reading != lastStableState ) {
+      lastStableState = reading;
+
+      if( lastStableState == HIGH ) {
+        // button released
+        Serial.println( "BOOT button pressed" );
+        Serial.printf( "%u samples gatered in buffer so far\n", ecg_buffer_index );
       }
     }
   }
