@@ -2,6 +2,7 @@
 extern "C" {
   #include "user_interface.h"
 }
+#include "LittleFS.h"
 
 #define LO_M D0         // Right arm electrode
 #define LO_P D1         // Left arm electrode
@@ -12,10 +13,14 @@ extern "C" {
 #define REFRACTORY_PERIOD         (FS/5)                // 200ms refractory period
 #define RISE_FALL_MAX_PERIOD      (FS/25)               // maximum period (in samples) between rise and fall, @200Hz => 8 samples = 40ms
 #define DERIV_BUF_SIZE ((int)((FS * 15 + 999) / 1000))  // derivative buffer size to cover ~15ms duration
+#define MAX_SAMPLES               4096                  // max samples to store in buffer
+#define MAX_FILL_SAMPLES          20                    // max samples to "fill" when saving to FS takes too long
 
-static uint32_t last_bpm = 0;
+static volatile uint16_t last_bpm = 0;
 static uint8_t rise_to_fall_period = 0;
 static uint8_t refractory_counter = 0;
+static uint16_t ecg_buffer[ MAX_SAMPLES ] = {0};
+static uint16_t ecg_buffer_index = 0;
 
 /**
  * Call this function FS times per second (e.g. in loop with delay(1000/FS))
@@ -76,12 +81,49 @@ bool process_ecg_sample( uint16_t adc_value ) {
 
     // BPM calculation
     if( current_time > 0 ) {
-      last_bpm = (uint32_t)( 6000 * FS / current_time );
+      last_bpm = (uint16_t)( 6000 * FS / current_time );
     }
     current_time = 0;
   }
 
   return heartbeat_detected;
+}
+
+bool saveToFile( const char * fileName, const uint8_t * data, uint32_t len ) {
+  if( !LittleFS.begin() ) {
+    Serial.println( "[LittleFS] File system mount error" );
+    return false;
+  }
+
+  // free space check
+  FSInfo fs_info;
+  LittleFS.info( fs_info );
+
+  uint32_t freeBytes = fs_info.totalBytes - fs_info.usedBytes;
+
+  if( len > freeBytes ) {
+    Serial.printf( "[LittleFS] No free space! Need: %u B, free: %u B\n", (unsigned)len, (unsigned)freeBytes );
+    return false;
+  }
+
+  // open file for write (mode "a" — appending data at the end of file, create file if doesn't exist)
+  File file = LittleFS.open( fileName, "a" );
+  if( !file ) {
+    Serial.printf( "[LittleFS] Can't open file for write: %s\n", fileName );
+    return false;
+  }
+
+  // save data
+  size_t written = file.write( data, len );
+  file.close();
+
+  if( written != len ) {
+    Serial.printf( "[LittleFS] Write error! Wrote %u from %u B\n", (unsigned)written, (unsigned)len );
+    return false;
+  }
+
+  Serial.printf( "[LittleFS] File saved: %s (%u B)\n", fileName, (unsigned)len );
+  return true;
 }
 
 void setup() {
@@ -101,7 +143,47 @@ void loop() {
     if( process_ecg_sample(adc) ) {
       Serial.print( "BPM = " );
       Serial.println( last_bpm );
+
+      // store sample in buffer
+      if( ecg_buffer_index < MAX_SAMPLES ) {
+        ecg_buffer[ ecg_buffer_index++ ] = last_bpm;
+      } else {      // buffer full, save to file
+        unsigned long t0, t1, dt_us;
+        static uint8_t saveAttempt = 0;
+
+        saveAttempt++;
+        Serial.printf( "ECG buffer full, saving to file (try %u)...\n", saveAttempt );
+
+        t0 = micros();
+        bool saved = saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+        t1 = micros();
+        dt_us = t1 - t0;
+        uint16_t missed = dt_us / ((1000 / FS) * 1000UL);   // how much samples were missed during saving?
+
+        if( missed > MAX_FILL_SAMPLES ) {
+          missed = MAX_FILL_SAMPLES;
+        }
+
+        for( uint16_t i = 0; i < missed; ++i ) {
+          process_ecg_sample( adc );        // "fill" missed samples with last ADC value
+        }
+
+        if( saved ) {
+          ecg_buffer_index = 0;
+          ecg_buffer[ ecg_buffer_index++ ] = last_bpm; // store current sample
+          Serial.printf( "Save took %lu us, missed %u samples (saved on try %u)\n", dt_us, missed, saveAttempt );
+          saveAttempt = 0;
+        } else {    // else keep buffer full and try to save again later
+          ecg_buffer_index = MAX_SAMPLES;
+          if( saveAttempt >= 5 ) {
+            Serial.println( "Multiple save attempts failed, clearing buffer!" );
+            ecg_buffer_index = 0;
+            saveAttempt = 0;
+          }
+        }
+      }
     }
   }
+  // TODO: adjust delay to account for processing time
   delay( 1000/FS ); // 200 Hz
 }
