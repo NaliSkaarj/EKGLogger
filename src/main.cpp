@@ -15,6 +15,7 @@ extern "C" {
 #define DERIV_BUF_SIZE ((int)((FS * 15 + 999) / 1000))  // derivative buffer size to cover ~15ms duration
 #define MAX_SAMPLES               4096                  // max samples to store in buffer
 #define MAX_FILL_SAMPLES          20                    // max samples to "fill" when saving to FS takes too long
+#define SAMPLE_INTERVAL_US        (1000000UL / FS)
 
 static volatile uint16_t last_bpm = 0;
 static uint8_t rise_to_fall_period = 0;
@@ -131,59 +132,67 @@ void setup() {
 }
 
 void loop() {
-  if( digitalRead(LO_M) == HIGH ) {
-    Serial.println( "Right Arm electrode error!" );
-  } else if( digitalRead(LO_P) == HIGH ) {
-    Serial.println( "Left Arm electrode error!" );
-  } else {
-    // uint16_t adc = analogRead( A0 );
-    uint16_t adc = system_adc_read();  // low level ADC read (faster, possible issue when WiFi used at the same time)
-    // Serial.println( adc );
+  static unsigned long lastSampleTime = 0;
+  unsigned long now = micros();
 
-    if( process_ecg_sample(adc) ) {
-      Serial.print( "BPM = " );
-      Serial.println( last_bpm );
+  // sampling interval check
+  if( now - lastSampleTime >= SAMPLE_INTERVAL_US ) {
+    lastSampleTime += SAMPLE_INTERVAL_US;  // maintain precise interval
 
-      // store sample in buffer
-      if( ecg_buffer_index < MAX_SAMPLES ) {
-        ecg_buffer[ ecg_buffer_index++ ] = last_bpm;
-      } else {      // buffer full, save to file
-        unsigned long t0, t1, dt_us;
-        static uint8_t saveAttempt = 0;
+    if( digitalRead(LO_M) == HIGH ) {
+      Serial.println( "Right Arm electrode error!" );
+    } else if( digitalRead(LO_P) == HIGH ) {
+      Serial.println( "Left Arm electrode error!" );
+    } else {
+      // uint16_t adc = analogRead( A0 );
+      uint16_t adc = system_adc_read();  // low level ADC read (faster, possible issue when WiFi used at the same time)
+      // Serial.println( adc );
 
-        saveAttempt++;
-        Serial.printf( "ECG buffer full, saving to file (try %u)...\n", saveAttempt );
+      if( process_ecg_sample(adc) ) {
+        Serial.print( "BPM = " );
+        Serial.println( last_bpm );
 
-        t0 = micros();
-        bool saved = saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
-        t1 = micros();
-        dt_us = t1 - t0;
-        uint16_t missed = dt_us / ((1000 / FS) * 1000UL);   // how much samples were missed during saving?
+        // store sample in buffer
+        if( ecg_buffer_index < MAX_SAMPLES ) {
+          ecg_buffer[ ecg_buffer_index++ ] = last_bpm;
+        } else {      // buffer full, save to file
+          unsigned long t0, t1, dt_us;
+          static uint8_t saveAttempt = 0;
 
-        if( missed > MAX_FILL_SAMPLES ) {
-          missed = MAX_FILL_SAMPLES;
-        }
+          saveAttempt++;
+          Serial.printf( "ECG buffer full, saving to file (try %u)...\n", saveAttempt );
 
-        for( uint16_t i = 0; i < missed; ++i ) {
-          process_ecg_sample( adc );        // "fill" missed samples with last ADC value
-        }
+          t0 = micros();
+          bool saved = saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+          t1 = micros();
+          dt_us = t1 - t0;
+          uint16_t missed = dt_us / ((1000 / FS) * 1000UL);   // how much samples were missed during saving?
 
-        if( saved ) {
-          ecg_buffer_index = 0;
-          ecg_buffer[ ecg_buffer_index++ ] = last_bpm; // store current sample
-          Serial.printf( "Save took %lu us, missed %u samples (saved on try %u)\n", dt_us, missed, saveAttempt );
-          saveAttempt = 0;
-        } else {    // else keep buffer full and try to save again later
-          ecg_buffer_index = MAX_SAMPLES;
-          if( saveAttempt >= 5 ) {
-            Serial.println( "Multiple save attempts failed, clearing buffer!" );
+          if( missed > MAX_FILL_SAMPLES ) {
+            missed = MAX_FILL_SAMPLES;
+          }
+
+          for( uint16_t i = 0; i < missed; ++i ) {
+            process_ecg_sample( adc );        // "fill" missed samples with last ADC value
+          }
+
+          if( saved ) {
             ecg_buffer_index = 0;
+            ecg_buffer[ ecg_buffer_index++ ] = last_bpm; // store current sample
+            Serial.printf( "Save took %lu us, missed %u samples (saved on try %u)\n", dt_us, missed, saveAttempt );
             saveAttempt = 0;
+          } else {    // else keep buffer full and try to save again later
+            ecg_buffer_index = MAX_SAMPLES;
+            if( saveAttempt >= 5 ) {
+              Serial.println( "Multiple save attempts failed, clearing buffer!" );
+              ecg_buffer_index = 0;
+              saveAttempt = 0;
+            }
           }
         }
       }
     }
   }
-  // TODO: adjust delay to account for processing time
-  delay( 1000/FS ); // 200 Hz
+
+  yield();  // allow ESP8266 to handle WiFi, watchdog, etc.
 }
