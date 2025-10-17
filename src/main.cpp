@@ -6,14 +6,14 @@ extern "C" {
 #define LO_M D0         // Right arm electrode
 #define LO_P D1         // Left arm electrode
 
-#define FS 200
+#define FS                        200                   // Sampling frequency in Hz
 #define RISE_THRESHOLD            300
 #define FALL_THRESHOLD            -500
-#define REFRACTORY_PERIOD         (FS/5)  // 200ms refractory period
-#define RISE_FALL_MAX_PERIOD      (FS/25) // maximum period (in samples) between rise and fall, @200Hz => 8 samples = 40ms
+#define REFRACTORY_PERIOD         (FS/5)                // 200ms refractory period
+#define RISE_FALL_MAX_PERIOD      (FS/25)               // maximum period (in samples) between rise and fall, @200Hz => 8 samples = 40ms
+#define DERIV_BUF_SIZE ((int)((FS * 15 + 999) / 1000))  // derivative buffer size to cover ~15ms duration
 
-static unsigned long current_time = 0;
-static float last_bpm = 0.0f;
+static uint32_t last_bpm = 0;
 static uint8_t rise_to_fall_period = 0;
 static uint8_t refractory_counter = 0;
 
@@ -23,7 +23,8 @@ static uint8_t refractory_counter = 0;
  * It returns true if a heartbeat was detected.
  */
 bool process_ecg_sample( uint16_t adc_value ) {
-  static int16_t deriv_buf[3] = {0};    // buffer size depends on FS (should be ~15ms in duration; @FS=200 => 3 samples, @FS=400 => 6 samples)
+  static uint32_t current_time = 0;
+  static int16_t deriv_buf[DERIV_BUF_SIZE] = {0};    // buffer size depends on FS (should be ~15ms in duration; @FS=200 => 3 samples, @FS=400 => 6 samples)
   static uint16_t prev_adc_value;
   static bool rise_detected = false;
   static bool fall_detected = false;
@@ -33,16 +34,23 @@ bool process_ecg_sample( uint16_t adc_value ) {
   prev_adc_value = adc_value;
   current_time++;
 
-  deriv_buf[2] = deriv_buf[1];
-  deriv_buf[1] = deriv_buf[0];
+  // insert new sample at the beginning
+  for( int i = DERIV_BUF_SIZE - 1; i > 0; i-- ) {
+      deriv_buf[i] = deriv_buf[i - 1];
+  }
   deriv_buf[0] = deriv;
 
+  // refractory period check
   if( refractory_counter > 0 ) {
     refractory_counter--;
     return false;
   }
 
-  int16_t deriv_sum = deriv_buf[0] + deriv_buf[1] + deriv_buf[2];
+  int16_t deriv_sum = 0;
+  // sum derivative buffer
+  for( int i = 0; i < DERIV_BUF_SIZE; i++ ) {
+    deriv_sum += deriv_buf[i];
+  }
 
   if( !rise_detected && !fall_detected && deriv_sum > RISE_THRESHOLD ) {
     rise_detected = true;
@@ -68,7 +76,7 @@ bool process_ecg_sample( uint16_t adc_value ) {
 
     // BPM calculation
     if( current_time > 0 ) {
-      last_bpm = 60.0f * FS / (float)current_time;
+      last_bpm = (uint32_t)( 6000 * FS / current_time );
     }
     current_time = 0;
   }
