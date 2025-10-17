@@ -10,7 +10,7 @@ extern "C" {
 #define FS                        200                   // Sampling frequency in Hz
 #define RISE_THRESHOLD            300
 #define FALL_THRESHOLD            -500
-#define REFRACTORY_PERIOD         (FS/5)                // 200ms refractory period
+#define REFRACTORY_PERIOD         (FS/4)                // 250ms refractory period
 #define RISE_FALL_MAX_PERIOD      (FS/25)               // maximum period (in samples) between rise and fall, @200Hz => 8 samples = 40ms
 #define DERIV_BUF_SIZE ((int)((FS * 15 + 999) / 1000))  // derivative buffer size to cover ~15ms duration
 #define MAX_SAMPLES               4096                  // max samples to store in buffer
