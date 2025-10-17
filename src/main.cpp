@@ -22,6 +22,7 @@ static uint8_t rise_to_fall_period = 0;
 static uint8_t refractory_counter = 0;
 static uint16_t ecg_buffer[ MAX_SAMPLES ] = {0};
 static uint16_t ecg_buffer_index = 0;
+bool electrodeError = false;
 
 /**
  * Call this function FS times per second (e.g. in loop with delay(1000/FS))
@@ -139,18 +140,20 @@ void loop() {
   if( now - lastSampleTime >= SAMPLE_INTERVAL_US ) {
     lastSampleTime += SAMPLE_INTERVAL_US;  // maintain precise interval
 
-    if( digitalRead(LO_M) == HIGH ) {
+    if( digitalRead(LO_M) == HIGH && !electrodeError ) {
       Serial.println( "Right Arm electrode error!" );
-    } else if( digitalRead(LO_P) == HIGH ) {
+      electrodeError = true;
+    } else if( digitalRead(LO_P) == HIGH && !electrodeError ) {
       Serial.println( "Left Arm electrode error!" );
-    } else {
+      electrodeError = true;
+    } else if( !electrodeError ) {
       // uint16_t adc = analogRead( A0 );
       uint16_t adc = system_adc_read();  // low level ADC read (faster, possible issue when WiFi used at the same time)
       // Serial.println( adc );
 
       if( process_ecg_sample(adc) ) {
         Serial.print( "BPM = " );
-        Serial.println( last_bpm );
+        Serial.println( (float)last_bpm/100, 2 );
 
         // store sample in buffer
         if( ecg_buffer_index < MAX_SAMPLES ) {
@@ -190,6 +193,12 @@ void loop() {
             }
           }
         }
+      }
+    } else {
+      // check if error condition cleared
+      if( digitalRead(LO_M) == LOW && digitalRead(LO_P) == LOW ) {
+        Serial.println( "Electrode error cleared." );
+        electrodeError = false;
       }
     }
   }
