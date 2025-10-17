@@ -133,8 +133,8 @@ void setup() {
 void loop() {
   if( digitalRead(LO_M) == HIGH ) {
     Serial.println( "Right Arm electrode error!" );
-  // } else if( digitalRead(LO_P) == HIGH ) {
-  //   Serial.println( "Left Arm electrode error!" );
+  } else if( digitalRead(LO_P) == HIGH ) {
+    Serial.println( "Left Arm electrode error!" );
   } else {
     // uint16_t adc = analogRead( A0 );
     uint16_t adc = system_adc_read();  // low level ADC read (faster, possible issue when WiFi used at the same time)
