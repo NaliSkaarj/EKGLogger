@@ -3,6 +3,7 @@ extern "C" {
   #include "user_interface.h"
 }
 #include "LittleFS.h"
+#include "ntp.h"
 
 #define LO_M                      D0                    // Right arm electrode
 #define LO_P                      D1                    // Left arm electrode
@@ -134,6 +135,7 @@ bool saveToFile( const char * fileName, const uint8_t * data, uint32_t len ) {
 void setup() {
   Serial.begin( 115200 );
   pinMode( BUTTON_BOOT_PIN, INPUT_PULLUP );
+  NTP_init();
 }
 
 void loop() {
@@ -141,8 +143,9 @@ void loop() {
   unsigned long now = micros();
   static bool lastReading = HIGH;             // last reading from button
   static unsigned long lastChangeTime = 0;    // last time the button state changed
-  static bool longPressHandled = false;
+  // static bool longPressHandled = false;
   bool reading;
+  static bool btnClicked = false;
 
   // ADC sampling interval check
   if( now - lastSampleTime >= SAMPLE_INTERVAL_US ) {
@@ -230,21 +233,33 @@ void loop() {
       if( lastStableState == LOW ) {
         // button pressed
         pressStartTime = btnTimeNow;
-
-        // check for long press while holding
-        if( btnTimeNow - pressStartTime >= LONG_PRESS_MS ) {
-          Serial.println( "Button long press (while holding)" );
-        }
       } else {
         // button released
         unsigned long pressDuration = btnTimeNow - pressStartTime;
         if( pressDuration >= LONG_PRESS_MS ) {
-          Serial.println( "Button long press (released)" );
+          Serial.println( "Button long pressed (released)" );
+          NTP_showTime();
         } else {
-          Serial.println( "BOOT button pressed" );
+          btnClicked = true;
+          Serial.println( "Button pressed" );
           Serial.printf( "%u samples gatered in buffer so far\n", ecg_buffer_index );
         }
       }
+    }
+  }
+
+  // handle button click action
+  if( btnClicked ) {
+    btnClicked = false;
+    String fileName = "/data_" + NTP_getFileTimestamp() + ".txt";
+    Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
+
+    bool saved = saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+    if( !saved ) {
+      Serial.println( "Error saving ECG data file!" );
+    } else {
+      Serial.println( "ECG data file saved successfully." );
+      ecg_buffer_index = 0;
     }
   }
 
