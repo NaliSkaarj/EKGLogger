@@ -18,6 +18,7 @@ extern "C" {
 #define MAX_FILL_SAMPLES          20                    // max samples to "fill" when saving to FS takes too long
 #define SAMPLE_INTERVAL_US        (1000000UL / FS)
 #define DEBOUNCE_MS               50                    // button debounce time in milliseconds
+#define LONG_PRESS_MS             1500                  // long press time in milliseconds
 
 static volatile uint16_t last_bpm = 0;
 static uint8_t rise_to_fall_period = 0;
@@ -138,8 +139,9 @@ void setup() {
 void loop() {
   static unsigned long lastSampleTime = 0;
   unsigned long now = micros();
-  static bool lastReading = HIGH;           // last reading from button
-  static unsigned long lastChangeTime = 0;
+  static bool lastReading = HIGH;             // last reading from button
+  static unsigned long lastChangeTime = 0;    // last time the button state changed
+  static bool longPressHandled = false;
   bool reading;
 
   // ADC sampling interval check
@@ -210,23 +212,38 @@ void loop() {
   }
 
   // Button debounce handling
+  unsigned long btnTimeNow = millis();
   reading = digitalRead( BUTTON_BOOT_PIN );
   // check for button state change
   if( reading != lastReading ) {
-    lastChangeTime = millis();
+    lastChangeTime = btnTimeNow;
     lastReading = reading;
   }
   // check if stable for DEBOUNCE_MS
-  if( (millis() - lastChangeTime) > DEBOUNCE_MS ) {
+  if( (btnTimeNow - lastChangeTime) > DEBOUNCE_MS ) {
     static bool lastStableState = HIGH;       // last stable state of button
 
     if( reading != lastStableState ) {
+      static unsigned long pressStartTime = 0;
       lastStableState = reading;
 
-      if( lastStableState == HIGH ) {
+      if( lastStableState == LOW ) {
+        // button pressed
+        pressStartTime = btnTimeNow;
+
+        // check for long press while holding
+        if( btnTimeNow - pressStartTime >= LONG_PRESS_MS ) {
+          Serial.println( "Button long press (while holding)" );
+        }
+      } else {
         // button released
-        Serial.println( "BOOT button pressed" );
-        Serial.printf( "%u samples gatered in buffer so far\n", ecg_buffer_index );
+        unsigned long pressDuration = btnTimeNow - pressStartTime;
+        if( pressDuration >= LONG_PRESS_MS ) {
+          Serial.println( "Button long press (released)" );
+        } else {
+          Serial.println( "BOOT button pressed" );
+          Serial.printf( "%u samples gatered in buffer so far\n", ecg_buffer_index );
+        }
       }
     }
   }
