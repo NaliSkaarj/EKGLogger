@@ -3,7 +3,7 @@ extern "C" {
   #include "user_interface.h"
 }
 #include "LittleFS.h"
-#include "ntp.h"
+#include "helper.h"
 
 #define LO_M                      D0                    // Right arm electrode
 #define LO_P                      D1                    // Left arm electrode
@@ -95,47 +95,10 @@ bool process_ecg_sample( uint16_t adc_value ) {
   return heartbeat_detected;
 }
 
-bool saveToFile( const char * fileName, const uint8_t * data, uint32_t len ) {
-  if( !LittleFS.begin() ) {
-    Serial.println( "[LittleFS] File system mount error" );
-    return false;
-  }
-
-  // free space check
-  FSInfo fs_info;
-  LittleFS.info( fs_info );
-
-  uint32_t freeBytes = fs_info.totalBytes - fs_info.usedBytes;
-
-  if( len > freeBytes ) {
-    Serial.printf( "[LittleFS] No free space! Need: %u B, free: %u B\n", (unsigned)len, (unsigned)freeBytes );
-    return false;
-  }
-
-  // open file for write (mode "a" — appending data at the end of file, create file if doesn't exist)
-  File file = LittleFS.open( fileName, "a" );
-  if( !file ) {
-    Serial.printf( "[LittleFS] Can't open file for write: %s\n", fileName );
-    return false;
-  }
-
-  // save data
-  size_t written = file.write( data, len );
-  file.close();
-
-  if( written != len ) {
-    Serial.printf( "[LittleFS] Write error! Wrote %u from %u B\n", (unsigned)written, (unsigned)len );
-    return false;
-  }
-
-  Serial.printf( "[LittleFS] File saved: %s (%u B)\n", fileName, (unsigned)len );
-  return true;
-}
-
 void setup() {
   Serial.begin( 115200 );
   pinMode( BUTTON_BOOT_PIN, INPUT_PULLUP );
-  NTP_init();
+  HELPER_init();
 }
 
 void loop() {
@@ -177,7 +140,7 @@ void loop() {
           Serial.printf( "ECG buffer full, saving to file (try %u)...\n", saveAttempt );
 
           t0 = micros();
-          bool saved = saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+          bool saved = HELPER_saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
           t1 = micros();
           dt_us = t1 - t0;
           uint16_t missed = dt_us / ((1000 / FS) * 1000UL);   // how much samples were missed during saving?
@@ -238,7 +201,7 @@ void loop() {
         unsigned long pressDuration = btnTimeNow - pressStartTime;
         if( pressDuration >= LONG_PRESS_MS ) {
           Serial.println( "Button long pressed (released)" );
-          NTP_showTime();
+          HELPER_showTime();
         } else {
           btnClicked = true;
           Serial.println( "Button pressed" );
@@ -251,10 +214,10 @@ void loop() {
   // handle button click action
   if( btnClicked ) {
     btnClicked = false;
-    String fileName = "/data_" + NTP_getFileTimestamp() + ".txt";
+    String fileName = "/data_" + HELPER_getFileTimestamp() + ".txt";
     Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
 
-    bool saved = saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+    bool saved = HELPER_saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
     if( !saved ) {
       Serial.println( "Error saving ECG data file!" );
     } else {
@@ -262,6 +225,8 @@ void loop() {
       ecg_buffer_index = 0;
     }
   }
+
+  server.handleClient();
 
   yield();  // allow ESP8266 to handle WiFi, watchdog, etc.
 }
