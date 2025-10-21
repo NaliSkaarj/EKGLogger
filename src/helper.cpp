@@ -163,7 +163,7 @@ void HELPER_showTime() {
   Serial.printf("UTC time:   %s\n", buf);
 }
 
-String HELPER_getFileTimestamp() {
+String HELPER_getDateTime() {
   time_t now = time(nullptr);
   struct tm timeinfo;
   localtime_r(&now, &timeinfo);

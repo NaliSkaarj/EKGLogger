@@ -214,7 +214,7 @@ void loop() {
   // handle button click action
   if( btnClicked ) {
     btnClicked = false;
-    String fileName = "/data_" + HELPER_getFileTimestamp() + ".txt";
+    String fileName = "/data_" + HELPER_getDateTime() + ".txt";
     Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
 
     bool saved = HELPER_saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );

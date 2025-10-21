@@ -8,7 +8,7 @@ extern ESP8266WebServer server;
 
 void HELPER_init();
 void HELPER_showTime();
-String HELPER_getFileTimestamp();
+String HELPER_getDateTime();
 bool HELPER_saveToFile( const char *, const uint8_t *, uint32_t );
 
 #endif  // HELPER_H
