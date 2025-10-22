@@ -273,11 +273,25 @@ bool HELPER_saveToFile( const char * fileName, const uint8_t * data, uint32_t le
 
 // Turn on: radio, WiFI, WebServer
 void HELPER_radioOn() {
+  if( !wifiConnected ) {
   WiFi.forceSleepWake();
   delay(5);
   Serial.println("Radio ON");
-  wifiConnect();
+
+    if(wifiConnect()) {
+      wifiConnected = true;
+
+      if(setNTPTime()) {
+        Serial.println("Time synchronized via NTP.");
+      } else {
+        setManualTime();
+      }
+    }
+  }
+
+  if( !webServerRunning && wifiConnected ) {
   webServerStart();
+}
 }
 
 // Turn off: WebSerwer, WiFi, radio
@@ -287,6 +301,7 @@ void HELPER_radioOff() {
   }
   WiFi.mode(WIFI_OFF);
   WiFi.forceSleepBegin();
+  wifiConnected = false;
   delay(1);
   Serial.println("WiFi OFF (radio off)");
 }
