@@ -10,6 +10,7 @@
 ESP8266WebServer server(80);
 bool initialized = false;
 bool wifiConnected = false;
+bool webServerRunning = false;
 
 // Simple HTML page with a list of files
 static void handleRoot() {
@@ -113,6 +114,22 @@ static void handleFileDelete() {
   }
 }
 
+static void webServerStart() {
+  server.on("/", handleRoot);
+  server.on("/file", handleFileDownload);
+  server.on("/delete", handleFileDelete);
+  server.begin();
+  Serial.println("HTTP server started");
+  webServerRunning = true;
+}
+
+static void webServerStop() {
+  server.close();   // close connections
+  server.stop();
+  Serial.println("HTTP server stopped");
+  webServerRunning = false;
+}
+
 static bool wifiConnect() {
   if(WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi already connected");
@@ -147,13 +164,7 @@ static void setManualTime() {
   Serial.println("Manual time set.");
 }
 
-void HELPER_init() {
-  if(wifiConnect()) {
-    wifiConnected = true;
-  } else {
-    wifiConnected = false;
-  }
-
+static bool setNTPTime() {
   if( wifiConnected ) {
     Serial.println("Synchronizing time via NTP...");
     configTime(7200, 0, "pool.ntp.org", "time.nist.gov");  // 7200s = +2h
@@ -165,27 +176,37 @@ void HELPER_init() {
       now = time(nullptr);
       if (millis() - start > 10000) { // timeout 10s
         Serial.println("NTP sync timeout, continuing with manual time set");
-        setManualTime();
-        break;
+        return false;
       }
     }
+    return true;
+  }
+
+  return false;
+}
+
+void HELPER_init() {
+  if(wifiConnect()) {
+    wifiConnected = true;
   } else {
-    Serial.println("WiFi not connected, set manual time.");
+    wifiConnected = false;
+  }
+
+  if(setNTPTime()) {
+    Serial.println("Time synchronized via NTP.");
+  } else {
     setManualTime();
   }
 
   if (!LittleFS.begin()) {
     Serial.println("Failed to mount LittleFS!");
-    return;
+  }
+
+  if( wifiConnected ) {
+    webServerStart();
   }
 
   initialized = true;
-  server.on("/", handleRoot);
-  server.on("/file", handleFileDownload);
-  server.on("/delete", handleFileDelete);
-  server.begin();
-
-  Serial.println("HTTP server started");
 }
 
 void HELPER_showTime() {
