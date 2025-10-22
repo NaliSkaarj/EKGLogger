@@ -4,6 +4,7 @@ extern "C" {
 }
 #include "LittleFS.h"
 #include "helper.h"
+#include <Ticker.h>
 
 #define LO_M                      D0                    // Right arm electrode
 #define LO_P                      D1                    // Left arm electrode
@@ -27,6 +28,11 @@ static uint8_t refractory_counter = 0;
 static uint16_t ecg_buffer[ MAX_SAMPLES ] = {0};
 static uint16_t ecg_buffer_index = 0;
 bool electrodeError = false;
+Ticker myTimer;
+
+static void turnWiFiOff() {
+  HELPER_radioOff();
+}
 
 /**
  * Call this function FS times per second (e.g. in loop with delay(1000/FS))
@@ -99,6 +105,7 @@ void setup() {
   Serial.begin( 115200 );
   pinMode( BUTTON_BOOT_PIN, INPUT_PULLUP );
   HELPER_init();
+  myTimer.once(30, turnWiFiOff);  // turn off WiFi after 30 seconds to save power
 }
 
 void loop() {
