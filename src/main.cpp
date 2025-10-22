@@ -31,9 +31,10 @@ bool electrodeError = false;
 bool btnClicked = false;
 bool btnLongPress = false;
 Ticker myTimer;
+volatile bool wifiOffFlag = false;
 
-static void turnWiFiOff() {
-  HELPER_radioOff();
+static void turnWiFiOffISR() {
+  wifiOffFlag = true;
 }
 
 static void handleButton() {
@@ -159,7 +160,7 @@ void setup() {
   Serial.begin( 115200 );
   pinMode( BUTTON_BOOT_PIN, INPUT_PULLUP );
   HELPER_init();
-  myTimer.once(30, turnWiFiOff);  // turn off WiFi after 30 seconds to save power
+  myTimer.once( 120, turnWiFiOffISR );  // turn off WiFi radio after 2 minutes to save power
 }
 
 void loop() {
@@ -255,11 +256,15 @@ void loop() {
     Serial.println( "Button long press handling..." );
     btnLongPress = false;
     HELPER_radioOn();
-    myTimer.once(120, turnWiFiOff);  // turn off WiFi radio after 2 minutes to save power
   }
 
   if( HELPER_isWebServerRunning() ) {
     server.handleClient();
+  }
+
+  if( wifiOffFlag ) {
+    wifiOffFlag = false;
+    HELPER_radioOff();
   }
 
   yield();  // allow ESP8266 to handle WiFi, watchdog, etc.
