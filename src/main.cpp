@@ -28,10 +28,64 @@ static uint8_t refractory_counter = 0;
 static uint16_t ecg_buffer[ MAX_SAMPLES ] = {0};
 static uint16_t ecg_buffer_index = 0;
 bool electrodeError = false;
+bool btnClicked = false;
+bool btnLongPress = false;
 Ticker myTimer;
 
 static void turnWiFiOff() {
   HELPER_radioOff();
+}
+
+static void handleButton() {
+  static bool lastReading = HIGH;             // last raw reading
+  static unsigned long lastChangeTime = 0;    // debounce timer
+  unsigned long now = millis();
+  bool reading = digitalRead(BUTTON_BOOT_PIN);
+
+  // detect state change (for debounce)
+  if (reading != lastReading) {
+    lastChangeTime = now;
+    lastReading = reading;
+  }
+
+  // check if state is stable long enough
+  if ((now - lastChangeTime) > DEBOUNCE_MS) {
+    static bool lastStableState = HIGH;         // last stable state
+    static unsigned long pressStartTime = 0;    // time when button pressed
+    static bool longPressTriggered = false;     // helper to avoid multiple triggers
+
+    if (reading != lastStableState) {
+      lastStableState = reading;
+
+      if (lastStableState == LOW) {
+        // button pressed
+        pressStartTime = now;
+        longPressTriggered = false;
+      } else {
+        // button released
+        unsigned long pressDuration = now - pressStartTime;
+
+        if (!longPressTriggered) {
+          if (pressDuration >= LONG_PRESS_MS) {
+            Serial.println("Button long pressed (released)");
+            btnLongPress = true;
+          } else {
+            Serial.println("Button short pressed");
+            btnClicked = true;
+          }
+        }
+      }
+    }
+
+    // check for long press while holding button
+    if (lastStableState == LOW && !longPressTriggered) {
+      if ((now - pressStartTime) >= LONG_PRESS_MS) {
+        Serial.println("Button long press detected (holding)");
+        btnLongPress = true;
+        longPressTriggered = true;  // avoid multiple triggers
+      }
+    }
+  }
 }
 
 /**
@@ -111,11 +165,6 @@ void setup() {
 void loop() {
   static unsigned long lastSampleTime = 0;
   unsigned long now = micros();
-  static bool lastReading = HIGH;             // last reading from button
-  static unsigned long lastChangeTime = 0;    // last time the button state changed
-  // static bool longPressHandled = false;
-  bool reading;
-  static bool btnClicked = false;
 
   // ADC sampling interval check
   if( now - lastSampleTime >= SAMPLE_INTERVAL_US ) {
@@ -184,39 +233,7 @@ void loop() {
     }
   }
 
-  // Button debounce handling
-  unsigned long btnTimeNow = millis();
-  reading = digitalRead( BUTTON_BOOT_PIN );
-  // check for button state change
-  if( reading != lastReading ) {
-    lastChangeTime = btnTimeNow;
-    lastReading = reading;
-  }
-  // check if stable for DEBOUNCE_MS
-  if( (btnTimeNow - lastChangeTime) > DEBOUNCE_MS ) {
-    static bool lastStableState = HIGH;       // last stable state of button
-
-    if( reading != lastStableState ) {
-      static unsigned long pressStartTime = 0;
-      lastStableState = reading;
-
-      if( lastStableState == LOW ) {
-        // button pressed
-        pressStartTime = btnTimeNow;
-      } else {
-        // button released
-        unsigned long pressDuration = btnTimeNow - pressStartTime;
-        if( pressDuration >= LONG_PRESS_MS ) {
-          Serial.println( "Button long pressed (released)" );
-          HELPER_showTime();
-        } else {
-          btnClicked = true;
-          Serial.println( "Button pressed" );
-          Serial.printf( "%u samples gatered in buffer so far\n", ecg_buffer_index );
-        }
-      }
-    }
-  }
+  handleButton();
 
   // handle button click action
   if( btnClicked ) {
@@ -231,6 +248,11 @@ void loop() {
       Serial.println( "ECG data file saved successfully." );
       ecg_buffer_index = 0;
     }
+  }
+  if( btnLongPress ) {
+    btnLongPress = false;
+    HELPER_radioOn();
+    myTimer.once(120, turnWiFiOff);  // turn off WiFi radio after 2 minutes to save power
   }
 
   server.handleClient();
