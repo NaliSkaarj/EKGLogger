@@ -240,15 +240,18 @@ void loop() {
   if( btnClicked ) {
     Serial.println( "Button click handling..." );
     btnClicked = false;
-    String fileName = "/data_" + HELPER_getDateTime() + ".txt";
-    Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
 
-    bool saved = HELPER_saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
-    if( !saved ) {
-      Serial.println( "Error saving ECG data file!" );
-    } else {
-      Serial.println( "ECG data file saved successfully." );
-      ecg_buffer_index = 0;
+    if( ecg_buffer_index > 0 ) {
+      String fileName = "/data_" + HELPER_getDateTime() + ".txt";
+      Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
+
+      bool saved = HELPER_saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+      if( !saved ) {
+        Serial.println( "Error saving ECG data file!" );
+      } else {
+        Serial.println( "ECG data file saved successfully." );
+        ecg_buffer_index = 0;
+      }
     }
   }
 
