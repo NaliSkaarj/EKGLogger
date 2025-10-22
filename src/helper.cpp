@@ -143,7 +143,7 @@ static bool wifiConnect() {
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print('.');
     delay(300);
-    if (millis() - start > 5000) { // timeout 5s
+    if (millis() - start > 10000) { // timeout 10s
       Serial.println();
       Serial.println("WiFi connection timeout");
       return false;
