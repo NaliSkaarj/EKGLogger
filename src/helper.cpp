@@ -270,3 +270,23 @@ bool HELPER_saveToFile( const char * fileName, const uint8_t * data, uint32_t le
   Serial.printf( "[LittleFS] File saved: %s (%u B)\n", fileName, (unsigned)len );
   return true;
 }
+
+// Turn on: radio, WiFI, WebServer
+void HELPER_radioOn() {
+  WiFi.forceSleepWake();
+  delay(5);
+  Serial.println("Radio ON");
+  wifiConnect();
+  webServerStart();
+}
+
+// Turn off: WebSerwer, WiFi, radio
+void HELPER_radioOff() {
+  if( webServerRunning ) {
+    webServerStop();
+  }
+  WiFi.mode(WIFI_OFF);
+  WiFi.forceSleepBegin();
+  delay(1);
+  Serial.println("WiFi OFF (radio off)");
+}
