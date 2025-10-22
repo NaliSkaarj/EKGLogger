@@ -259,6 +259,7 @@ void loop() {
     Serial.println( "Button long press handling..." );
     btnLongPress = false;
     HELPER_radioOn();
+    myTimer.once( 120, turnWiFiOffISR );  // turn off WiFi radio after 2 minutes to save power
   }
 
   if( HELPER_isWebServerRunning() ) {
