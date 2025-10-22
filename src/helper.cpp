@@ -5,7 +5,7 @@
 #include <time.h>
 #include <LittleFS.h>
 
-#define CUSTOM_TIME_EPOCH 1761994800  // Date and time (GMT): Saturday, November 1, 2025 11:00:00 AM
+#define CUSTOM_TIME_EPOCH 1735729200  // Date and time (GMT): Wednesday, January 1, 2025 12:00:00 PM
 
 ESP8266WebServer server(80);
 bool initialized = false;
