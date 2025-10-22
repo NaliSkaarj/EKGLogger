@@ -249,13 +249,16 @@ void loop() {
       ecg_buffer_index = 0;
     }
   }
+
   if( btnLongPress ) {
     btnLongPress = false;
     HELPER_radioOn();
     myTimer.once(120, turnWiFiOff);  // turn off WiFi radio after 2 minutes to save power
   }
 
-  server.handleClient();
+  if( HELPER_isWebServerRunning() ) {
+    server.handleClient();
+  }
 
   yield();  // allow ESP8266 to handle WiFi, watchdog, etc.
 }
