@@ -166,19 +166,21 @@ static void setManualTime() {
 
 static bool setNTPTime() {
   if( wifiConnected ) {
-    Serial.println("Synchronizing time via NTP...");
+    Serial.print("Synchronizing time via NTP");
     configTime(7200, 0, "pool.ntp.org", "time.nist.gov");  // 7200s = +2h
     // wait for time synchronization — 'time(nullptr)' will be > 8*3600 when synchronized
     time_t now = time(nullptr);
     uint32_t start = millis();
     while (now < 1000000000UL) { // iftime less than ~2001-09-09 => no synchronization yet
+      Serial.print('.');
       delay(200);
       now = time(nullptr);
       if (millis() - start > 10000) { // timeout 10s
-        Serial.println("NTP sync timeout, continuing with manual time set");
+        Serial.println("\nNTP sync timeout, continuing with manual time set");
         return false;
       }
     }
+    Serial.println();
     return true;
   }
 
@@ -282,11 +284,13 @@ void HELPER_radioOn() {
       wifiConnected = true;
 
       if(setNTPTime()) {
-        Serial.println("Time synchronized via NTP.");
+        Serial.println("Time synchronized via NTP");
       } else {
         setManualTime();
       }
     }
+  } else {
+    Serial.println("WiFi/radio already ON");
   }
 
   if( !webServerRunning && wifiConnected ) {
@@ -298,12 +302,19 @@ void HELPER_radioOn() {
 void HELPER_radioOff() {
   if( webServerRunning ) {
     webServerStop();
+  } else {
+    Serial.println("WebServer already stopped");
   }
-  WiFi.mode(WIFI_OFF);
-  WiFi.forceSleepBegin();
-  wifiConnected = false;
-  delay(1);
-  Serial.println("WiFi OFF (radio off)");
+
+  if( wifiConnected ) {
+    WiFi.mode(WIFI_OFF);
+    WiFi.forceSleepBegin();
+    wifiConnected = false;
+    delay(1);
+    Serial.println("WiFi OFF (radio off)");
+  } else {
+    Serial.println("WiFi/radio already OFF");
+  }
 }
 
 bool HELPER_isWebServerRunning() {

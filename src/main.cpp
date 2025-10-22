@@ -67,10 +67,10 @@ static void handleButton() {
 
         if (!longPressTriggered) {
           if (pressDuration >= LONG_PRESS_MS) {
-            Serial.println("Button long pressed (released)");
+            Serial.println("Button long press detected (released)");
             btnLongPress = true;
           } else {
-            Serial.println("Button short pressed");
+            Serial.println("Button click detected");
             btnClicked = true;
           }
         }
@@ -237,6 +237,7 @@ void loop() {
 
   // handle button click action
   if( btnClicked ) {
+    Serial.println( "Button click handling..." );
     btnClicked = false;
     String fileName = "/data_" + HELPER_getDateTime() + ".txt";
     Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
@@ -251,6 +252,7 @@ void loop() {
   }
 
   if( btnLongPress ) {
+    Serial.println( "Button long press handling..." );
     btnLongPress = false;
     HELPER_radioOn();
     myTimer.once(120, turnWiFiOff);  // turn off WiFi radio after 2 minutes to save power
