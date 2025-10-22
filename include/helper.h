@@ -12,5 +12,6 @@ String HELPER_getDateTime();
 bool HELPER_saveToFile( const char *, const uint8_t *, uint32_t );
 void HELPER_radioOn();
 void HELPER_radioOff();
+bool HELPER_isWebServerRunning();
 
 #endif  // HELPER_H
