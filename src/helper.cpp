@@ -5,7 +5,11 @@
 #include <time.h>
 #include <LittleFS.h>
 
+#define CUSTOM_TIME_EPOCH 1761994800  // Date and time (GMT): Saturday, November 1, 2025 11:00:00 AM
+
 ESP8266WebServer server(80);
+bool initialized = false;
+bool wifiConnected = false;
 
 // Simple HTML page with a list of files
 static void handleRoot() {
@@ -109,31 +113,65 @@ static void handleFileDelete() {
   }
 }
 
-void HELPER_init() {
+static bool wifiConnect() {
+  if(WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi already connected");
+    return true;
+  }
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifi_SSID, wifi_PASS);
   Serial.print("Connecting to WiFi");
+  uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print('.');
     delay(300);
+    if (millis() - start > 5000) { // timeout 5s
+      Serial.println();
+      Serial.println("WiFi connection timeout");
+      return false;
+    }
   }
   Serial.println();
   Serial.print("WiFi connected, IP: ");
   Serial.println(WiFi.localIP());
+  return true;
+}
 
-  configTime(7200, 0, "pool.ntp.org", "time.nist.gov");  // 7200s = +2h
+// Set time manually
+static void setManualTime() {
+  struct timeval tv;
+  tv.tv_sec = CUSTOM_TIME_EPOCH;  // time in seconds from 1970-01-01
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+  Serial.println("Manual time set.");
+}
 
-  Serial.println("Waiting for NTP time...");
-  // wait for time synchronization — 'time(nullptr)' will be > 8*3600 when synchronized
-  time_t now = time(nullptr);
-  uint32_t start = millis();
-  while (now < 1000000000UL) { // iftime less than ~2001-09-09 => no synchronization yet
-    delay(200);
-    now = time(nullptr);
-    if (millis() - start > 10000) { // timeout 10s
-      Serial.println("NTP sync timeout, continuing with whatever time is available");
-      break;
+void HELPER_init() {
+  if(wifiConnect()) {
+    wifiConnected = true;
+  } else {
+    wifiConnected = false;
+  }
+
+  if( wifiConnected ) {
+    Serial.println("Synchronizing time via NTP...");
+    configTime(7200, 0, "pool.ntp.org", "time.nist.gov");  // 7200s = +2h
+    // wait for time synchronization — 'time(nullptr)' will be > 8*3600 when synchronized
+    time_t now = time(nullptr);
+    uint32_t start = millis();
+    while (now < 1000000000UL) { // iftime less than ~2001-09-09 => no synchronization yet
+      delay(200);
+      now = time(nullptr);
+      if (millis() - start > 10000) { // timeout 10s
+        Serial.println("NTP sync timeout, continuing with manual time set");
+        setManualTime();
+        break;
+      }
     }
+  } else {
+    Serial.println("WiFi not connected, set manual time.");
+    setManualTime();
   }
 
   if (!LittleFS.begin()) {
@@ -141,6 +179,7 @@ void HELPER_init() {
     return;
   }
 
+  initialized = true;
   server.on("/", handleRoot);
   server.on("/file", handleFileDownload);
   server.on("/delete", handleFileDelete);
