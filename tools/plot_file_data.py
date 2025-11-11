@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import struct
 import sys
+import os
 import matplotlib.pyplot as plt
 
 def read_bpm_from_file(filename):
@@ -17,7 +18,8 @@ def read_bpm_from_file(filename):
 
 def main():
     if len(sys.argv) < 2:
-        print("Użycie: python plot_bpm.py <plik>")
+        script_name = os.path.basename(sys.argv[0])  # tylko nazwa pliku, bez ścieżki
+        print(f"Użycie: python {script_name} <plik>")
         sys.exit(1)
 
     filename = sys.argv[1]
