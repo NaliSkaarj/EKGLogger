@@ -7,6 +7,7 @@
 
 #define CUSTOM_TIME_EPOCH 1735729200  // Date and time (GMT): Wednesday, January 1, 2025 12:00:00 PM
 
+extern volatile bool resetWiFiOffTimerFlag;
 ESP8266WebServer server(80);
 bool initialized = false;
 bool wifiConnected = false;
@@ -14,6 +15,8 @@ bool webServerRunning = false;
 
 // Simple HTML page with a list of files
 static void handleRoot() {
+  resetWiFiOffTimerFlag = true;
+
   String html = R"rawliteral(
   <html>
   <head>
@@ -60,6 +63,8 @@ static void handleRoot() {
 
 // Download a specific file
 static void handleFileDownload() {
+  resetWiFiOffTimerFlag = true;
+
   if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Missing 'name' parameter");
     return;
@@ -77,6 +82,8 @@ static void handleFileDownload() {
 }
 
 static void handleFileDelete() {
+  resetWiFiOffTimerFlag = true;
+
   if (!server.hasArg("file")) {
     server.send(400, "text/plain", "Missing 'file' parameter");
     return;

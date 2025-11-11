@@ -32,6 +32,7 @@ bool btnClicked = false;
 bool btnLongPress = false;
 Ticker myTimer;
 volatile bool wifiOffFlag = false;
+volatile bool resetWiFiOffTimerFlag = false;
 
 static void turnWiFiOffISR() {
   wifiOffFlag = true;
@@ -87,6 +88,12 @@ static void handleButton() {
       }
     }
   }
+}
+
+static void resetWiFiOffTimer() {
+  myTimer.detach();
+  myTimer.once( 120, turnWiFiOffISR );  // re-arm for next time
+  Serial.println("WiFi-off timer reset");
 }
 
 /**
@@ -264,6 +271,11 @@ void loop() {
 
   if( HELPER_isWebServerRunning() ) {
     server.handleClient();
+  }
+
+  if( resetWiFiOffTimerFlag ) {
+    resetWiFiOffTimerFlag = false;
+    resetWiFiOffTimer();
   }
 
   if( wifiOffFlag ) {
