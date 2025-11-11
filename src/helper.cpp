@@ -6,6 +6,8 @@
 #include <LittleFS.h>
 
 #define CUSTOM_TIME_EPOCH 1735729200  // Date and time (GMT): Wednesday, January 1, 2025 12:00:00 PM
+// #define TIME_ZONE         7200        // Timezone offset in seconds (+2 hours)
+#define TIME_ZONE         3600        // Timezone offset in seconds (+1 hour)
 
 extern volatile bool resetWiFiOffTimerFlag;
 ESP8266WebServer server(80);
@@ -174,7 +176,7 @@ static void setManualTime() {
 static bool setNTPTime() {
   if( wifiConnected ) {
     Serial.print("Synchronizing time via NTP");
-    configTime(7200, 0, "pool.ntp.org", "time.nist.gov");  // 7200s = +2h
+    configTime(TIME_ZONE, 0, "pool.ntp.org", "time.nist.gov");
     // wait for time synchronization — 'time(nullptr)' will be > 8*3600 when synchronized
     time_t now = time(nullptr);
     uint32_t start = millis();
