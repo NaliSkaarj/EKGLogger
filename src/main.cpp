@@ -203,8 +203,11 @@ void loop() {
           saveAttempt++;
           Serial.printf( "ECG buffer full, saving to file (try %u)...\n", saveAttempt );
 
+          String fileName = "/data_" + HELPER_getDateTime() + ".txt";
+          Serial.printf( "Saving ECG data to file: %s\n", fileName.c_str() );
+
           t0 = micros();
-          bool saved = HELPER_saveToFile( "/ecg_data.bin", (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
+          bool saved = HELPER_saveToFile( fileName.c_str(), (uint8_t*)ecg_buffer, ecg_buffer_index * sizeof(uint16_t) );
           t1 = micros();
           dt_us = t1 - t0;
           uint16_t missed = dt_us / ((1000 / FS) * 1000UL);   // how much samples were missed during saving?
